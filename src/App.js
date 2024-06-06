@@ -82,7 +82,7 @@ export function App() {
             </div>
             <div className='app'>
                 <header className='header'>
-                    <h2 className='title'>WBTC Balance Checker</h2>
+                    <h2 className='title'>wBTC Balance Checker</h2>
                 </header>
                 <form onSubmit={handleSubmit} className='form'>
                     <label htmlFor="wallet" className='label'>Enter your wallet:</label>
@@ -97,7 +97,7 @@ export function App() {
                     <button type="submit" className='button'>Check Balance</button>
                 </form>
                 {balance !== 0 && (
-                    <h1 className='balance'>You have {convertSatoshisToBTC(balance)} WBTC</h1>
+                    <h1 className='balance'>You have {convertSatoshisToBTC(balance)} wBTC</h1>
                 )}
                 {error && (
                     <p className='error'>Error: {error}</p>
