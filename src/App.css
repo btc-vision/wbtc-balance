@@ -16,6 +16,7 @@ body {
 
 .app-container {
     text-align: center;
+    padding: 0 20px;
 }
 
 .main-title {
@@ -35,6 +36,7 @@ body {
     max-width: 500px;
     width: 100%;
     margin: 0 auto;
+    position: relative;
 }
 
 .header {
@@ -43,12 +45,27 @@ body {
     border-radius: 8px 8px 0 0;
     color: white;
     margin-bottom: 20px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: relative;
 }
 
 .title {
     margin: 0;
     font-size: 1.8em;
     font-weight: bold;
+}
+
+.total-supply {
+    position: absolute;
+    top: 10px;
+    right: 20px;
+    font-size: 0.8em;
+    color: #ffffff;
+    background-color: rgba(0, 0, 0, 0.5); /* Add a semi-transparent background */
+    padding: 5px;
+    border-radius: 5px;
 }
 
 .form {
@@ -98,4 +115,32 @@ body {
     margin-top: 20px;
     font-size: 1.2em;
     color: #dc3545;
+}
+
+@media (max-width: 600px) {
+    .main-title {
+        font-size: 2em;
+    }
+
+    .app {
+        padding: 20px;
+    }
+
+    .header {
+        padding: 10px;
+        font-size: 1.2em;
+    }
+
+    .total-supply {
+        font-size: 0.7em;
+        padding: 3px;
+    }
+
+    .label, .input, .button {
+        font-size: 0.9em;
+    }
+
+    .button {
+        padding: 8px 15px;
+    }
 }

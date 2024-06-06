@@ -18,6 +18,17 @@ export const wBTC = [
         type: BitcoinAbiTypes.Function,
     },
     {
+        name: 'totalSupply',
+        inputs: [],
+        outputs: [
+            {
+                name: 'supply',
+                type: ABIDataTypes.UINT256,
+            },
+        ],
+        type: BitcoinAbiTypes.Function,
+    },
+    {
         name: 'owner',
         constant: true,
         outputs: [
