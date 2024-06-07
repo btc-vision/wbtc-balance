@@ -17,7 +17,7 @@ export function App() {
     const [totalSupply, setSupply] = useState(0);
 
     const contract = getContract(
-        'tb1pq64lx73fwyrdp4asvl7xt5r5qvxvt9wy82x75taqtzvd64f58nasansurj',
+        'tb1qv9hnnf8ymsr6mr5lwa4jmqqtwrjs5t09pa83wq',
         wBTC,
         provider,
     );
