@@ -3,7 +3,13 @@ import { getContract, JSONRpcProvider } from "opnet";
 
 import './App.css';
 import { wBTC } from "./metadata/wBTC";
-import { EcKeyPair, OPNetLimitedProvider, TransactionFactory, Wallet } from "@btc-vision/transaction";
+import {
+    EcKeyPair,
+    OPNetLimitedProvider,
+    TransactionFactory,
+    Wallet,
+    wBTC as WrappedBitcoin
+} from "@btc-vision/transaction";
 import { Buffer } from 'buffer/';
 import * as networks from 'bitcoinjs-lib/src/networks';
 import { ABICoder, BinaryWriter } from '@btc-vision/bsi-binary';
@@ -27,9 +33,13 @@ const abiCoder = new ABICoder();
 const transferSelector = Number(`0x` + abiCoder.encodeSelector('transfer'));
 
 const network = networks.testnet;
+console.log(network);
+
+const wrappedBitcoin = new WrappedBitcoin(network);
+console.log(wrappedBitcoin);
 
 const contract = getContract(
-    'tb1qv9hnnf8ymsr6mr5lwa4jmqqtwrjs5t09pa83wq',
+    wrappedBitcoin.getAddress(),
     wBTC,
     provider,
 );
@@ -141,6 +151,8 @@ export function App() {
                 publicKey: keypair.publicKey.toString('hex')
             }, network);
 
+            console.log(wallet);
+
             const requiredBalance = convertBTCtoSatoshis(wrapAmount);
             const currentBalance = await getWBTCBalance(wallet.p2tr);
             if (currentBalance < requiredBalance) {
@@ -151,19 +163,21 @@ export function App() {
 
             console.log(`Current balance: ${currentBalance}`)
 
+            /**
+             * @type {FetchUTXOParamsMultiAddress}
+             */
             const utxoSetting = {
-                address: wallet.p2wpkh,
+                addresses: [wallet.p2wpkh, wallet.p2tr],
                 minAmount: 10000n,
                 requestedAmount: 100000n,
             };
 
-            const utxos = await utxoManager.fetchUTXO(utxoSetting);
+            const utxos = await utxoManager.fetchUTXOMultiAddr(utxoSetting);
             if (!utxos) {
                 setFeedbackMessage('Insufficient funds.');
                 setFeedbackSuccess(false);
                 return;
             }
-
 
             const calldata = getTransferToCalldata(
                 transferTo,
@@ -172,7 +186,7 @@ export function App() {
 
             const interactionParameters = {
                 from: wallet.p2wpkh,
-                to: 'tb1pq64lx73fwyrdp4asvl7xt5r5qvxvt9wy82x75taqtzvd64f58nasansurj',
+                to: wrappedBitcoin.getAddress(),
                 utxos: utxos,
                 signer: wallet.keypair,
                 network: network,
