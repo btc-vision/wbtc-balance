@@ -67,6 +67,22 @@ export function App() {
     const [feedbackMessage, setFeedbackMessage] = useState('');
     const [feedbackSuccess, setFeedbackSuccess] = useState(false);
 
+    const handleWalletConnect = () => {
+        // Logic to connect wallet
+        if (typeof window.unisat !== 'undefined') {
+            window.unisat.requestAccounts().then((accounts) => {
+                console.log(accounts);
+                setWalletAddress(accounts[0]);
+                void fetchBalance(accounts[0]);
+                }).catch((error) => {
+                console.error(error);
+                });
+          } 
+          else {
+            alert('MotoSwap wallet not detected. Please install MotoSwap wallet.')
+          }
+    };
+
     async function getWBTCBalance(address) {
         const result = await contract.balanceOf(address);
         if ('error' in result) throw new Error('Something went wrong');
@@ -242,7 +258,12 @@ export function App() {
                 <header className='header'>
                     <h2 className='title'>wBTC Balance Checker</h2>
                 </header>
-                <form onSubmit={handleSubmit} className='form'>
+                <button onClick={handleWalletConnect} className='button'>Connect Wallet</button>
+                <br/>
+                {walletAddress && (
+                    <h3 className='balance small-font'>Connected wallet: {walletAddress.slice(0, 32)}...</h3>
+                )}
+                {/* <form onSubmit={handleSubmit} className='form'>
                     <label htmlFor="wallet" className='label'>Enter your wallet:</label>
                     <input
                         type="text"
@@ -253,7 +274,10 @@ export function App() {
                         placeholder="Enter Bitcoin wallet address"
                     />
                     <button type="submit" className='button'>Check Balance</button>
-                </form>
+                </form> */}
+                <br/>
+                <button onClick={handleWrapBitcoin} className='purple-button'>Wrap Your Bitcoin</button>
+                <br/>
                 <br/>
                 <button onClick={handleWrapBitcoin} className='purple-button'>Transfer Wrapped Bitcoin</button>
                 {balance !== 0 && (
