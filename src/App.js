@@ -14,7 +14,7 @@ import { Buffer } from 'buffer/';
 import * as networks from 'bitcoinjs-lib/src/networks';
 import { ABICoder, BinaryWriter } from '@btc-vision/bsi-binary';
 
-const provider = new JSONRpcProvider('http://localhost:9001'); //'https://regtest.opnet.org'
+const provider = new JSONRpcProvider('https://regtest.opnet.org');
 
 /* global BigInt */
 
