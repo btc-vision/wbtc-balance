@@ -1,48 +1,42 @@
 import React, { useEffect, useState } from 'react';
-import { getContract, JSONRpcProvider } from "opnet";
+import { getContract, JSONRpcProvider } from 'opnet';
 
 import './App.css';
-import { wBTC } from "./metadata/wBTC";
+import { wBTC } from './metadata/wBTC';
 import {
     EcKeyPair,
     OPNetLimitedProvider,
     TransactionFactory,
-    Wallet,
-    wBTC as WrappedBitcoin
-} from "@btc-vision/transaction";
+    UnisatSigner,
+    wBTC as WrappedBitcoin,
+} from '@btc-vision/transaction';
 import { Buffer } from 'buffer/';
 import * as networks from 'bitcoinjs-lib/src/networks';
 import { ABICoder, BinaryWriter } from '@btc-vision/bsi-binary';
 
-const provider = new JSONRpcProvider('https://testnet.opnet.org');
+const provider = new JSONRpcProvider('http://localhost:9001'); //'https://regtest.opnet.org'
 
 /* global BigInt */
 
 function convertSatoshisToBTC(satoshis) {
-    return (Number(satoshis || 0n) / 100000000).toFixed(7).replace(/([0-9]+(\.[0-9]+[1-9])?)(\.?0+$)/, '$1');
+    return (Number(satoshis || 0n) / 100000000)
+        .toFixed(7)
+        .replace(/([0-9]+(\.[0-9]+[1-9])?)(\.?0+$)/, '$1');
 }
 
 function convertBTCtoSatoshis(btc) {
     return BigInt(Math.floor(Number(btc) * 100000000));
 }
 
-const utxoManager = new OPNetLimitedProvider('https://testnet.opnet.org');
+const utxoManager = new OPNetLimitedProvider('https://regtest.opnet.org');
 const factory = new TransactionFactory();
 
 const abiCoder = new ABICoder();
 const transferSelector = Number(`0x` + abiCoder.encodeSelector('transfer'));
 
-const network = networks.testnet;
-console.log(network);
-
+const network = networks.regtest;
 const wrappedBitcoin = new WrappedBitcoin(network);
-console.log(wrappedBitcoin);
-
-const contract = getContract(
-    wrappedBitcoin.getAddress(),
-    wBTC,
-    provider,
-);
+const contract = getContract(wrappedBitcoin.getAddress(), wBTC, provider);
 
 function getTransferToCalldata(to, amount) {
     const addCalldata = new BinaryWriter();
@@ -61,26 +55,26 @@ export function App() {
     const [error, setError] = useState(null);
     const [totalSupply, setSupply] = useState(0);
     const [showModal, setShowModal] = useState(false);
-    const [bitcoinWIF, setBitcoinWIF] = useState('');
     const [wrapAmount, setWrapAmount] = useState('');
     const [transferTo, setTransferTo] = useState('');
     const [feedbackMessage, setFeedbackMessage] = useState('');
     const [feedbackSuccess, setFeedbackSuccess] = useState(false);
 
-    const handleWalletConnect = () => {
+    const handleWalletConnect = async () => {
         // Logic to connect wallet
         if (typeof window.unisat !== 'undefined') {
-            window.unisat.requestAccounts().then((accounts) => {
-                console.log(accounts);
-                setWalletAddress(accounts[0]);
-                void fetchBalance(accounts[0]);
-                }).catch((error) => {
+            const accounts = await window.unisat.requestAccounts().catch((error) => {
                 console.error(error);
-                });
-          } 
-          else {
-            alert('MotoSwap wallet not detected. Please install MotoSwap wallet.')
-          }
+            });
+
+            if (accounts) {
+                setWalletAddress(accounts[0]);
+
+                await fetchBalance(accounts[0]);
+            }
+        } else {
+            alert('Wallet not detected. Please install a wallet extension.');
+        }
     };
 
     async function getWBTCBalance(address) {
@@ -108,6 +102,8 @@ export function App() {
         if (!address) return setError('Please enter a valid wallet address');
 
         try {
+            console.log('fetching balance', address);
+
             const balance = await getWBTCBalance(address);
             setBalance(balance);
         } catch (err) {
@@ -124,18 +120,6 @@ export function App() {
         void fetchSupply();
     }, 30000);
 
-    const handleChange = (e) => {
-        setWalletAddress(e.target.value);
-    };
-
-    const handleSubmit = (e) => {
-        e.preventDefault();
-
-        setError(null);
-        setBalance(0);
-        void fetchBalance(walletAddress);
-    };
-
     const handleWrapBitcoin = () => {
         setShowModal(true);
     };
@@ -145,7 +129,7 @@ export function App() {
     };
 
     const handleConfirmWrap = async () => {
-        if (!bitcoinWIF || !wrapAmount || !transferTo) {
+        if (!wrapAmount || !transferTo) {
             setFeedbackMessage('Please fill in all fields.');
             setFeedbackSuccess(false);
             return;
@@ -160,30 +144,27 @@ export function App() {
 
         // Perform action and set feedback message
         try {
-            const keypair = EcKeyPair.fromWIF(bitcoinWIF, network);
-            const wallet = new Wallet({
-                privateKey: bitcoinWIF,
-                address: EcKeyPair.getTaprootAddress(keypair, network),
-                publicKey: keypair.publicKey.toString('hex')
-            }, network);
-
-            console.log(wallet);
+            const keypair = new UnisatSigner();
+            await keypair.init();
 
             const requiredBalance = convertBTCtoSatoshis(wrapAmount);
-            const currentBalance = await getWBTCBalance(wallet.p2tr);
+            const currentBalance = await getWBTCBalance(keypair.p2tr); //wallet.p2tr
+
             if (currentBalance < requiredBalance) {
-                setFeedbackMessage(`Oops! Insufficient funds! You only have ${convertSatoshisToBTC(currentBalance)} wBTC. You need ${wrapAmount} wBTC to proceed.`);
+                setFeedbackMessage(
+                    `Oops! Insufficient funds! You only have ${convertSatoshisToBTC(
+                        currentBalance,
+                    )} wBTC. You need ${wrapAmount} wBTC to proceed.`,
+                );
                 setFeedbackSuccess(false);
                 return;
             }
-
-            console.log(`Current balance: ${currentBalance}`)
 
             /**
              * @type {FetchUTXOParamsMultiAddress}
              */
             const utxoSetting = {
-                addresses: [wallet.p2wpkh, wallet.p2tr],
+                addresses: keypair.addresses, //wallet.p2wpkh, wallet.p2tr
                 minAmount: 10000n,
                 requestedAmount: 100000n,
             };
@@ -195,23 +176,20 @@ export function App() {
                 return;
             }
 
-            const calldata = getTransferToCalldata(
-                transferTo,
-                requiredBalance
-            );
+            const calldata = getTransferToCalldata(transferTo, requiredBalance);
 
             const interactionParameters = {
-                from: wallet.p2wpkh,
+                from: keypair.p2tr, //wallet.p2wpkh,
                 to: wrappedBitcoin.getAddress(),
                 utxos: utxos,
-                signer: wallet.keypair,
-                network: network,
+                signer: keypair, //wallet.keypair,
+                network: keypair.network,
                 feeRate: 450,
                 priorityFee: 50000n,
                 calldata: calldata,
             };
 
-            const finalTx = factory.signInteraction(interactionParameters);
+            const finalTx = await factory.signInteraction(interactionParameters);
             if (!finalTx) {
                 setFeedbackMessage('Transaction failed.');
                 setFeedbackSuccess(false);
@@ -233,7 +211,11 @@ export function App() {
             }
 
             if (broadcastTxA && broadcastTxB && broadcastTxA.success && broadcastTxB.success) {
-                setFeedbackMessage(`Successfully transferred ${wrapAmount} wBTC to ${transferTo}. Transaction ID: ${broadcastTxB.result}. Broadcasted to ${broadcastTxB.peers + 1} peer(s).`)
+                setFeedbackMessage(
+                    `Successfully transferred ${wrapAmount} wBTC to ${transferTo}. Transaction ID: ${
+                        broadcastTxB.result
+                    }. Broadcasted to ${broadcastTxB.peers + 1} peer(s).`,
+                );
                 setFeedbackSuccess(true);
             } else {
                 setFeedbackMessage('Something went wrong. Please try again.');
@@ -249,19 +231,28 @@ export function App() {
     };
 
     return (
-        <div className='app-container'>
-            <h1 className='main-title'>Wrapped Bitcoin</h1>
-            <div className='total-supply'>
-                <h3>Total Supply: {totalSupply !== null ? convertSatoshisToBTC(totalSupply) : 'Loading...'} wBTC</h3>
+        <div className="app-container">
+            <h1 className="main-title">Wrapped Bitcoin</h1>
+            <div className="total-supply">
+                <h3>
+                    Total Supply:{' '}
+                    {totalSupply !== null ? convertSatoshisToBTC(totalSupply) : 'Loading...'} wBTC
+                </h3>
             </div>
-            <div className='app'>
-                <header className='header'>
-                    <h2 className='title'>wBTC Balance Checker</h2>
+            <div className="app">
+                <header className="header">
+                    <h2 className="title">wBTC Balance Checker</h2>
                 </header>
-                <button onClick={handleWalletConnect} className='button'>Connect Wallet</button>
-                <br/>
+                <button
+                    onClick={handleWalletConnect}
+                    className="button">
+                    Connect Wallet
+                </button>
+                <br />
                 {walletAddress && (
-                    <h3 className='balance small-font'>Connected wallet: {walletAddress.slice(0, 32)}...</h3>
+                    <h3 className="balance small-font">
+                        Connected wallet: {walletAddress.slice(0, 32)}...
+                    </h3>
                 )}
                 {/* <form onSubmit={handleSubmit} className='form'>
                     <label htmlFor="wallet" className='label'>Enter your wallet:</label>
@@ -275,43 +266,65 @@ export function App() {
                     />
                     <button type="submit" className='button'>Check Balance</button>
                 </form> */}
-                <br/>
-                <button onClick={handleWrapBitcoin} className='purple-button'>Wrap Your Bitcoin</button>
-                <br/>
-                <br/>
-                <button onClick={handleWrapBitcoin} className='purple-button'>Transfer Wrapped Bitcoin</button>
+                <br />
+                <button
+                    onClick={handleWrapBitcoin}
+                    className="purple-button">
+                    Wrap Your Bitcoin
+                </button>
+                <br />
+                <br />
+                <button
+                    onClick={handleWrapBitcoin}
+                    className="purple-button">
+                    Transfer Wrapped Bitcoin
+                </button>
                 {balance !== 0 && (
-                    <h1 className='balance'>You have {convertSatoshisToBTC(balance)} wBTC</h1>
+                    <h1 className="balance">You have {convertSatoshisToBTC(balance)} wBTC</h1>
                 )}
-                {error && (
-                    <p className='error'>Error: {error}</p>
-                )}
+                {error && <p className="error">Error: {error}</p>}
 
                 {/* Modal */}
                 {showModal && (
                     <div className="modal">
                         <div className="modal-content">
-                            <span className="close" onClick={handleCloseModal}>&times;</span>
+                            <span
+                                className="close"
+                                onClick={handleCloseModal}>
+                                &times;
+                            </span>
                             <h2>Transfer wBTC</h2>
                             <div className="input-group">
-                                <label htmlFor="bitcoinWIF">Bitcoin WIF (private key):</label>
-                                <input type="text" id="bitcoinWIF" value={bitcoinWIF}
-                                       onChange={(e) => setBitcoinWIF(e.target.value)}/>
-                            </div>
-                            <div className="input-group">
                                 <label htmlFor="wrapAmount">Amount to transfer:</label>
-                                <input type="text" id="wrapAmount" value={wrapAmount}
-                                       onChange={(e) => setWrapAmount(e.target.value)}/>
+                                <input
+                                    type="text"
+                                    id="wrapAmount"
+                                    value={wrapAmount}
+                                    onChange={(e) => setWrapAmount(e.target.value)}
+                                />
                             </div>
                             <div className="input-group">
                                 <label htmlFor="transferTo">Transfer to (p2tr address):</label>
-                                <input type="text" id="transferTo" value={transferTo}
-                                       onChange={(e) => setTransferTo(e.target.value)}/>
+                                <input
+                                    type="text"
+                                    id="transferTo"
+                                    value={transferTo}
+                                    onChange={(e) => setTransferTo(e.target.value)}
+                                />
                             </div>
                             {feedbackMessage && (
-                                <p className={feedbackSuccess ? 'success-message' : 'error-message'}>{feedbackMessage}</p>
+                                <p
+                                    className={
+                                        feedbackSuccess ? 'success-message' : 'error-message'
+                                    }>
+                                    {feedbackMessage}
+                                </p>
                             )}
-                            <button className='purple-button' onClick={handleConfirmWrap}>Confirm</button>
+                            <button
+                                className="purple-button"
+                                onClick={handleConfirmWrap}>
+                                Confirm
+                            </button>
                         </div>
                     </div>
                 )}
