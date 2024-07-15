@@ -185,7 +185,7 @@ export function App() {
                 signer: keypair, //wallet.keypair,
                 network: keypair.network,
                 feeRate: 450,
-                priorityFee: 50000n,
+                priorityFee: 10000n,
                 calldata: calldata,
             };
 
