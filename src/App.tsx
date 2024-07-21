@@ -1,64 +1,64 @@
 import React, { useEffect, useState } from 'react';
-import { getContract, JSONRpcProvider } from 'opnet';
+import {
+    BroadcastedTransaction,
+    getContract,
+    IWBTCContract,
+    JSONRpcProvider,
+    WBTC_ABI,
+} from 'opnet';
 
 import './App.css';
-import { wBTC } from './metadata/wBTC';
 import {
+    AddressVerificator,
     EcKeyPair,
+    IInteractionParameters,
+    InteractionParametersWithoutSigner,
     OPNetLimitedProvider,
     TransactionFactory,
     UnisatSigner,
     wBTC as WrappedBitcoin,
 } from '@btc-vision/transaction';
-import { Buffer } from 'buffer/';
 import * as networks from 'bitcoinjs-lib/src/networks';
-import { ABICoder, BinaryWriter } from '@btc-vision/bsi-binary';
-
-const provider = new JSONRpcProvider('https://regtest.opnet.org');
+import { Address } from '@btc-vision/bsi-binary';
+import { FetchUTXOParamsMultiAddress } from '@btc-vision/transaction/src/utxo/interfaces/IUTXO.js';
 
 /* global BigInt */
 
-function convertSatoshisToBTC(satoshis) {
+const API_URL = 'https://regtest.opnet.org';
+const provider = new JSONRpcProvider(API_URL);
+
+const utxoManager = new OPNetLimitedProvider(API_URL);
+const factory = new TransactionFactory();
+
+const network = networks.regtest;
+const wrappedBitcoin = new WrappedBitcoin(network);
+
+let contract: IWBTCContract = getContract<IWBTCContract>(
+    wrappedBitcoin.getAddress(),
+    WBTC_ABI,
+    provider,
+);
+
+function convertSatoshisToBTC(satoshis: bigint): string {
     return (Number(satoshis || 0n) / 100000000)
         .toFixed(7)
         .replace(/([0-9]+(\.[0-9]+[1-9])?)(\.?0+$)/, '$1');
 }
 
-function convertBTCtoSatoshis(btc) {
+function convertBTCtoSatoshis(btc: string): bigint {
     return BigInt(Math.floor(Number(btc) * 100000000));
 }
 
-const utxoManager = new OPNetLimitedProvider('https://regtest.opnet.org');
-const factory = new TransactionFactory();
-
-const abiCoder = new ABICoder();
-const transferSelector = Number(`0x` + abiCoder.encodeSelector('transfer'));
-
-const network = networks.regtest;
-const wrappedBitcoin = new WrappedBitcoin(network);
-const contract = getContract(wrappedBitcoin.getAddress(), wBTC, provider);
-
-function getTransferToCalldata(to, amount) {
-    const addCalldata = new BinaryWriter();
-    addCalldata.writeSelector(transferSelector);
-    addCalldata.writeAddress(to);
-    addCalldata.writeU256(amount);
-
-    const uint = addCalldata.getBuffer();
-
-    return Buffer.from(uint);
-}
-
 export function App() {
-    const [walletAddress, setWalletAddress] = useState('');
-    const [balance, setBalance] = useState(0);
-    const [error, setError] = useState(null);
-    const [totalSupply, setSupply] = useState(0);
-    const [showModal, setShowModal] = useState(false);
-    const [wrapAmount, setWrapAmount] = useState('');
-    const [transferTo, setTransferTo] = useState('');
-    const [feedbackMessage, setFeedbackMessage] = useState('');
-    const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+    const [walletAddress, setWalletAddress] = useState<string>('');
+    const [balance, setBalance] = useState<bigint>(0n);
+    const [error, setError] = useState<string>('');
+    const [totalSupply, setSupply] = useState<bigint>(0n);
+    const [showModal, setShowModal] = useState<boolean>(false);
+    const [wrapAmount, setWrapAmount] = useState<string>('');
+    const [transferTo, setTransferTo] = useState<string>('');
+    const [feedbackMessage, setFeedbackMessage] = useState<string>('');
+    const [feedbackSuccess, setFeedbackSuccess] = useState<boolean>(false);
 
     const handleWalletConnect = async () => {
         // Logic to connect wallet
@@ -70,18 +70,32 @@ export function App() {
             if (accounts) {
                 setWalletAddress(accounts[0]);
 
+                // if address is p2tr, set the new contract.
+                if (AddressVerificator.isValidP2TRAddress(accounts[0], network)) {
+                    contract = getContract<IWBTCContract>(
+                        wrappedBitcoin.getAddress(),
+                        WBTC_ABI,
+                        provider,
+                        accounts[0],
+                    );
+                }
+
                 await fetchBalance(accounts[0]);
             }
         } else {
-            alert('Wallet not detected. Please install a wallet extension.');
+            setFeedbackMessage(
+                'Unsupported wallet extension detected. Please install Unisat or Xverse.',
+            );
+
+            setFeedbackSuccess(false);
         }
     };
 
-    async function getWBTCBalance(address) {
+    async function getWBTCBalance(address: Address): Promise<bigint> {
         const result = await contract.balanceOf(address);
         if ('error' in result) throw new Error('Something went wrong');
 
-        const properties = result.properties;
+        const properties: { balance: bigint } = result.properties as { balance: bigint };
         return properties.balance || 0n;
     }
 
@@ -92,23 +106,25 @@ export function App() {
             return setError('Something went wrong while fetching the total supply');
         }
 
-        const properties = totalSupply.properties;
-        const supply = properties.supply;
+        const properties: { totalSupply: bigint } = totalSupply.properties as {
+            totalSupply: bigint;
+        };
 
+        const supply = properties.totalSupply;
         setSupply(supply);
     }
 
-    async function fetchBalance(address) {
+    async function fetchBalance(address: Address): Promise<void> {
         if (!address) return setError('Please enter a valid wallet address');
 
         try {
-            console.log('fetching balance', address);
-
             const balance = await getWBTCBalance(address);
             setBalance(balance);
         } catch (err) {
-            console.log(err, contract);
-            setError(err.message);
+            const error = err as Error;
+
+            console.log('problem fetching balance', error, contract);
+            setError(error.message);
         }
     }
 
@@ -142,10 +158,34 @@ export function App() {
             return;
         }
 
+        if (!window.unisat) {
+            setFeedbackMessage(
+                'Oops, unsupported wallet extension detected. Please install Unisat or Xverse.',
+            );
+            setFeedbackSuccess(false);
+            return;
+        }
+
         // Perform action and set feedback message
         try {
             const keypair = new UnisatSigner();
             await keypair.init();
+
+            if (!AddressVerificator.isValidP2TRAddress(keypair.p2tr, network)) {
+                setFeedbackMessage(
+                    'Invalid network. Please make sure you are on the right network.',
+                );
+
+                setFeedbackSuccess(false);
+                return;
+            }
+
+            contract = getContract<IWBTCContract>(
+                wrappedBitcoin.getAddress(),
+                WBTC_ABI,
+                provider,
+                keypair.p2tr,
+            );
 
             const requiredBalance = convertBTCtoSatoshis(wrapAmount);
             const currentBalance = await getWBTCBalance(keypair.p2tr); //wallet.p2tr
@@ -160,57 +200,93 @@ export function App() {
                 return;
             }
 
-            /**
-             * @type {FetchUTXOParamsMultiAddress}
-             */
-            const utxoSetting = {
-                addresses: keypair.addresses, //wallet.p2wpkh, wallet.p2tr
-                minAmount: 10000n,
-                requestedAmount: 100000n,
+            const utxoSetting: FetchUTXOParamsMultiAddress = {
+                addresses: keypair.addresses,
+                minAmount: 10_000n,
+                requestedAmount: 100_000n,
             };
 
             const utxos = await utxoManager.fetchUTXOMultiAddr(utxoSetting);
-            if (!utxos) {
+            if (!utxos || !utxos.length) {
                 setFeedbackMessage('Insufficient funds.');
                 setFeedbackSuccess(false);
                 return;
             }
 
-            const calldata = getTransferToCalldata(transferTo, requiredBalance);
+            const call = await contract.transfer(transferTo, requiredBalance);
+            if ('error' in call) {
+                setFeedbackMessage(
+                    `Could not create transaction. Simulation failed. ${call.error}`,
+                );
 
-            const interactionParameters = {
+                setFeedbackSuccess(false);
+                return;
+            }
+
+            const calldata = call.calldata;
+            if (!calldata) {
+                setFeedbackMessage('Something went wrong. Please try again.');
+                setFeedbackSuccess(false);
+                return;
+            }
+
+            console.log('Estimated gas', call.estimatedGas);
+
+            const interactionParameters: InteractionParametersWithoutSigner = {
                 from: keypair.p2tr, //wallet.p2wpkh,
                 to: wrappedBitcoin.getAddress(),
                 utxos: utxos,
-                signer: keypair, //wallet.keypair,
+                //signer: keypair, //wallet.keypair,
                 network: keypair.network,
                 feeRate: 450,
                 priorityFee: 10000n,
                 calldata: calldata,
             };
 
-            const finalTx = await factory.signInteraction(interactionParameters);
-            if (!finalTx) {
-                setFeedbackMessage('Transaction failed.');
-                setFeedbackSuccess(false);
-                return;
+            let broadcastedTxs: [BroadcastedTransaction, BroadcastedTransaction];
+            if (!window.unisat.web3) {
+                const interactionParameter: IInteractionParameters = {
+                    ...interactionParameters,
+                    signer: keypair,
+                };
+
+                const finalTx = await factory.signInteraction(interactionParameter);
+
+                if (!finalTx) {
+                    setFeedbackMessage('Transaction failed.');
+                    setFeedbackSuccess(false);
+                    return;
+                }
+
+                const broadcastTxA = await provider.sendRawTransaction(finalTx[0], false);
+                if (!broadcastTxA.result) {
+                    setFeedbackMessage('Transaction failed.');
+                    setFeedbackSuccess(false);
+                    return;
+                }
+
+                const broadcastTxB = await provider.sendRawTransaction(finalTx[1], false);
+                if (!broadcastTxB.result) {
+                    setFeedbackMessage('Transaction failed.');
+                    setFeedbackSuccess(false);
+                    return;
+                }
+
+                broadcastedTxs = [broadcastTxA, broadcastTxB];
+            } else {
+                broadcastedTxs = await window.unisat.web3.signInteraction(interactionParameters);
             }
 
-            const broadcastTxA = await provider.sendRawTransaction(finalTx[0], false);
-            if (!broadcastTxA) {
-                setFeedbackMessage('Transaction failed.');
-                setFeedbackSuccess(false);
-                return;
-            }
+            const broadcastTxA = broadcastedTxs[0];
+            const broadcastTxB = broadcastedTxs[1];
 
-            const broadcastTxB = await provider.sendRawTransaction(finalTx[1], false);
-            if (!broadcastTxB) {
-                setFeedbackMessage('Transaction failed.');
-                setFeedbackSuccess(false);
-                return;
-            }
-
-            if (broadcastTxA && broadcastTxB && broadcastTxA.success && broadcastTxB.success) {
+            if (
+                broadcastTxA &&
+                broadcastTxB &&
+                broadcastTxB.result &&
+                broadcastTxA.result &&
+                broadcastTxB.peers
+            ) {
                 setFeedbackMessage(
                     `Successfully transferred ${wrapAmount} wBTC to ${transferTo}. Transaction ID: ${
                         broadcastTxB.result
@@ -223,7 +299,7 @@ export function App() {
                 setFeedbackSuccess(false);
             }
         } catch (error) {
-            console.error(error);
+            console.log('Something went wrong', error);
             // If error occurs, set error message
             setFeedbackMessage('Something went wrong. Please try again.');
             setFeedbackSuccess(false);
@@ -266,20 +342,20 @@ export function App() {
                     />
                     <button type="submit" className='button'>Check Balance</button>
                 </form> */}
-                <br />
-                <button
+                {/*<br />
+                 <button
                     onClick={handleWrapBitcoin}
                     className="purple-button">
                     Wrap Your Bitcoin
                 </button>
-                <br />
+                <br /> */}
                 <br />
                 <button
                     onClick={handleWrapBitcoin}
                     className="purple-button">
                     Transfer Wrapped Bitcoin
                 </button>
-                {balance !== 0 && (
+                {balance !== 0n && (
                     <h1 className="balance">You have {convertSatoshisToBTC(balance)} wBTC</h1>
                 )}
                 {error && <p className="error">Error: {error}</p>}
