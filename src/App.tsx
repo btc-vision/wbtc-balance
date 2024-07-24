@@ -4,6 +4,7 @@ import {
     getContract,
     IWBTCContract,
     JSONRpcProvider,
+    UTXO,
     WBTC_ABI,
 } from 'opnet';
 
@@ -243,7 +244,7 @@ export function App() {
                 calldata: calldata,
             };
 
-            let broadcastedTxs: [BroadcastedTransaction, BroadcastedTransaction];
+            let broadcastedTxs: [BroadcastedTransaction, BroadcastedTransaction, UTXO[]];
             if (!window.unisat.web3) {
                 const interactionParameter: IInteractionParameters = {
                     ...interactionParameters,
@@ -272,7 +273,7 @@ export function App() {
                     return;
                 }
 
-                broadcastedTxs = [broadcastTxA, broadcastTxB];
+                broadcastedTxs = [broadcastTxA, broadcastTxB, []];
             } else {
                 broadcastedTxs = await window.unisat.web3.signInteraction(interactionParameters);
             }
